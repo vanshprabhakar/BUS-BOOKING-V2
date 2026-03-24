@@ -1,0 +1,149 @@
+.seat-selector {
+  background: white;
+  padding: 30px;
+  border-radius: 10px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+}
+
+.seat-layout {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 15px;
+  margin-bottom: 30px;
+  padding: 20px;
+  background: #f9f9f9;
+  border-radius: 10px;
+}
+
+.seat-row {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+}
+
+.seat {
+  width: 40px;
+  height: 40px;
+  border: 2px solid #ddd;
+  border-radius: 5px;
+  background: white;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+  transition: all 0.3s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.seat.available {
+  background: white;
+  color: #333;
+  border-color: #999;
+}
+
+.seat.available:hover:not(:disabled) {
+  background: #e8f4f8;
+  border-color: #667eea;
+  transform: scale(1.1);
+}
+
+.seat.booked {
+  background: #f0f0f0;
+  color: #999;
+  border-color: #ccc;
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.seat.booked:disabled {
+  cursor: not-allowed;
+}
+
+.seat.selected {
+  background: #667eea;
+  color: white;
+  border-color: #667eea;
+}
+
+.seat-legend {
+  display: flex;
+  justify-content: center;
+  gap: 30px;
+  margin-bottom: 30px;
+  padding: 20px;
+  background: #f9f9f9;
+  border-radius: 10px;
+}
+
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.legend-seat {
+  width: 30px;
+  height: 30px;
+  border: 2px solid #999;
+  border-radius: 4px;
+}
+
+.legend-seat.available {
+  background: white;
+}
+
+.legend-seat.booked {
+  background: #f0f0f0;
+  border-color: #ccc;
+}
+
+.legend-seat.selected {
+  background: #667eea;
+  border-color: #667eea;
+}
+
+.legend-item label {
+  margin: 0;
+  font-size: 14px;
+  color: #333;
+}
+
+.seat-summary {
+  background: #f9f9f9;
+  padding: 20px;
+  border-radius: 10px;
+  border-left: 4px solid #667eea;
+}
+
+.seat-summary p {
+  margin: 10px 0;
+  font-size: 14px;
+  display: flex;
+  justify-content: space-between;
+}
+
+.seat-summary p:last-child {
+  font-weight: bold;
+  font-size: 18px;
+  color: #28a745;
+}
+
+@media (max-width: 768px) {
+  .seat-layout {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 10px;
+    padding: 15px;
+  }
+
+  .seat {
+    width: 35px;
+    height: 35px;
+    font-size: 11px;
+  }
+
+  .seat-legend {
+    flex-wrap: wrap;
+    gap: 15px;
+  }
+}

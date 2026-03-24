@@ -1,0 +1,188 @@
+.bus-card {
+  background: white;
+  border-radius: 10px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+  overflow: hidden;
+  transition: all 0.3s ease;
+  margin-bottom: 20px;
+}
+
+.bus-card:hover {
+  box-shadow: 0 5px 20px rgba(0, 0, 0, 0.15);
+  transform: translateY(-5px);
+}
+
+.bus-header {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  padding: 15px 20px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.bus-header h3 {
+  font-size: 18px;
+  margin: 0;
+}
+
+.bus-rating {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+}
+
+.rating-stars {
+  font-size: 18px;
+}
+
+.review-count {
+  opacity: 0.8;
+}
+
+.bus-details {
+  padding: 20px;
+}
+
+.time-section {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 15px;
+}
+
+.departure, .arrival {
+  flex: 1;
+  text-align: center;
+}
+
+.time {
+  font-size: 20px;
+  font-weight: bold;
+  color: #333;
+  margin: 0;
+}
+
+.label {
+  font-size: 12px;
+  color: #999;
+  margin: 5px 0 0 0;
+}
+
+.duration {
+  flex: 1;
+  text-align: center;
+  border-left: 2px dashed #ddd;
+  border-right: 2px dashed #ddd;
+}
+
+.duration-text {
+  color: #667eea;
+  font-weight: 600;
+  margin: 0;
+}
+
+.route-section {
+  border-top: 1px solid #eee;
+  padding-top: 15px;
+}
+
+.route {
+  font-size: 14px;
+  color: #666;
+  margin: 0;
+}
+
+.bus-amenities {
+  padding: 0 20px;
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 15px;
+}
+
+.amenity-badge {
+  background: #f0f0f0;
+  padding: 5px 12px;
+  border-radius: 20px;
+  font-size: 12px;
+  color: #666;
+}
+
+.bus-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0 20px 20px;
+  border-top: 1px solid #eee;
+  padding-top: 15px;
+}
+
+.bus-info {
+  flex: 1;
+}
+
+.bus-type {
+  font-size: 14px;
+  font-weight: 600;
+  color: #667eea;
+  margin: 0;
+}
+
+.seats-available {
+  font-size: 12px;
+  color: #999;
+  margin: 5px 0 0 0;
+}
+
+.booking-info {
+  text-align: right;
+}
+
+.price {
+  font-size: 24px;
+  font-weight: bold;
+  color: #28a745;
+  margin: 0 0 10px 0;
+}
+
+.select-btn {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  padding: 10px 25px;
+  border: none;
+  border-radius: 5px;
+  cursor: pointer;
+  font-weight: 600;
+  transition: all 0.3s ease;
+}
+
+.select-btn:hover {
+  transform: scale(1.05);
+}
+
+@media (max-width: 768px) {
+  .time-section {
+    flex-direction: column;
+    gap: 15px;
+  }
+
+  .duration {
+    border-left: none;
+    border-right: none;
+    border-bottom: 2px dashed #ddd;
+    padding-bottom: 15px;
+  }
+
+  .bus-footer {
+    flex-direction: column;
+    gap: 15px;
+    text-align: center;
+  }
+
+  .booking-info {
+    text-align: center;
+    width: 100%;
+  }
+}
