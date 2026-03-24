@@ -7,9 +7,13 @@ export const SearchProvider = ({ children }) => {
     source: '',
     destination: '',
     date: '',
+    returnDate: '',
+    bookingType: 'oneway',
     busType: '',
     priceMin: 0,
-    priceMax: 50000
+    priceMax: 50000,
+    selectedSeats: [],
+    passengerDetails: []
   });
 
   return (

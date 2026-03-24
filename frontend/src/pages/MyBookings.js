@@ -48,8 +48,10 @@ const MyBookings = () => {
     switch (status) {
       case 'confirmed':
         return 'status-confirmed';
-      case 'pending':
+      case 'payment_pending':
         return 'status-pending';
+      case 'failed':
+        return 'status-failed';
       case 'cancelled':
         return 'status-cancelled';
       default:

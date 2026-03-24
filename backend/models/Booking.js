@@ -57,10 +57,36 @@ const bookingSchema = new mongoose.Schema(
       required: true,
       min: 0
     },
+    bookingType: {
+      type: String,
+      enum: ['oneway', 'roundtrip'],
+      default: 'oneway'
+    },
+    returnDate: {
+      type: Date,
+      default: null
+    },
+    passengerDetails: {
+      type: [
+        {
+          firstName: String,
+          lastName: String,
+          email: String,
+          phone: String,
+          gender: { type: String, enum: ['male', 'female', 'other'], default: 'other' }
+        }
+      ],
+      validate: {
+        validator: function (v) {
+          return Array.isArray(v) && v.length > 0;
+        },
+        message: 'Passenger details must be provided'
+      }
+    },
     status: {
       type: String,
-      enum: ['pending', 'confirmed', 'cancelled'],
-      default: 'pending'
+      enum: ['initiated', 'payment_pending', 'confirmed', 'failed', 'cancelled'],
+      default: 'initiated'
     },
     paymentStatus: {
       type: String,

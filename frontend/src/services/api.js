@@ -49,6 +49,7 @@ export const busAPI = {
   getBusById: (id) => api.get(`/buses/${id}`),
   getBusSeats: (id, date) => api.get(`/buses/${id}/seats/${date}`),
   searchBuses: (data) => api.post('/buses/search', data),
+  getSuggestions: (query) => api.get(`/buses/suggestions?q=${encodeURIComponent(query)}`),
   getPopularRoutes: () => api.get('/buses/popular-routes')
 };
 
@@ -58,6 +59,7 @@ export const bookingAPI = {
   getMyBookings: (params) => api.get('/bookings/my', { params }),
   getBookingDetails: (id) => api.get(`/bookings/${id}`),
   confirmBooking: (id, data) => api.post(`/bookings/${id}/confirm`, data),
+  bypassBooking: (id) => api.post(`/bookings/${id}/bypass`),
   cancelBooking: (id, data) => api.post(`/bookings/${id}/cancel`, data)
 };
 

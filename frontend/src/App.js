@@ -17,6 +17,7 @@ import Buses from './pages/Buses';
 import Booking from './pages/Booking';
 import Payment from './pages/Payment';
 import MyBookings from './pages/MyBookings';
+import BookingConfirmation from './pages/BookingConfirmation';
 import Admin from './pages/Admin';
 
 function App() {
@@ -33,6 +34,7 @@ function App() {
               <Route path="/buses" element={<Buses />} />
               <Route path="/booking/:id" element={<ProtectedRoute Component={Booking} />} />
               <Route path="/payment/:bookingId" element={<ProtectedRoute Component={Payment} />} />
+              <Route path="/booking-confirmation/:bookingId" element={<ProtectedRoute Component={BookingConfirmation} />} />
               <Route path="/my-bookings" element={<ProtectedRoute Component={MyBookings} />} />
               <Route path="/admin" element={<ProtectedRoute Component={Admin} adminOnly={true} />} />
             </Routes>

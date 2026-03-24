@@ -4,14 +4,14 @@ import { useParams, useLocation, useNavigate } from 'react-router-dom';
 import { bookingAPI } from '../services/api';
 import { toast } from 'react-toastify';
 import { formatPrice } from '../utils/helpers';
-import { AuthContext } from '../context/AuthContext';
 
 const Payment = () => {
   const { bookingId } = useParams();
   const location = useLocation();
   const navigate = useNavigate();
+  const queryParams = new URLSearchParams(location.search);
+  const bypassEnabled = queryParams.get('bypass') === 'true';
   const booking = location.state?.booking;
-  const { user } = useContext(AuthContext);
 
   const [paymentMethod, setPaymentMethod] = useState('card');
   const [isProcessing, setIsProcessing] = useState(false);
@@ -45,6 +45,18 @@ const Payment = () => {
       navigate('/my-bookings');
     } catch (error) {
       toast.error('Error processing payment failure');
+    }
+  };
+
+  const handleBypassPayment = async () => {
+    try {
+      const response = await bookingAPI.bypassBooking(bookingId);
+      if (response.data.success) {
+        toast.success('Bypass successful. Booking confirmed');
+        navigate(`/booking-confirmation/${bookingId}`);
+      }
+    } catch (error) {
+      toast.error('Bypass failed');
     }
   };
 
@@ -112,12 +124,30 @@ const Payment = () => {
           </button>
 
           <button
+            className="fail-btn"
+            onClick={handlePaymentFailure}
+            disabled={isProcessing}
+          >
+            Simulate Failure
+          </button>
+
+          <button
             className="cancel-btn"
             onClick={() => navigate('/my-bookings')}
             disabled={isProcessing}
           >
             Cancel
           </button>
+
+          {bypassEnabled && (
+            <button
+              className="bypass-btn"
+              onClick={handleBypassPayment}
+              disabled={isProcessing}
+            >
+              Bypass Payment (Demo)
+            </button>
+          )}
         </div>
 
         <p className="payment-note">

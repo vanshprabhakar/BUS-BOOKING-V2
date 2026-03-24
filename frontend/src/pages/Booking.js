@@ -1,9 +1,10 @@
-import React, { useState, useEffect, useContext } from 'react';
+import React, { useState, useEffect, useContext, useCallback } from 'react';
 import '../styles/Booking.css';
 import { useParams, useLocation, useNavigate } from 'react-router-dom';
 import { busAPI, bookingAPI } from '../services/api';
 import SeatSelector from '../components/SeatSelector';
 import { AuthContext } from '../context/AuthContext';
+import { SearchContext } from '../context/SearchContext';
 import { toast } from 'react-toastify';
 import { formatPrice } from '../utils/helpers';
 
@@ -12,27 +13,27 @@ const Booking = () => {
   const location = useLocation();
   const navigate = useNavigate();
   const { user } = useContext(AuthContext);
+  const { searchParams } = useContext(SearchContext);
   const bus = location.state?.bus;
 
   const [selectedSeats, setSelectedSeats] = useState([]);
   const [seatLayout, setSeatLayout] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [passengerRegistry, setPassengerRegistry] = useState({}); // Persistent storage by seat number
   const [formData, setFormData] = useState({
     passengerName: user?.name || '',
     passengerEmail: user?.email || '',
     passengerPhone: user?.phone || '',
-    travelDate: '',
+    travelDate: searchParams.date || '',
+    returnDate: searchParams.returnDate || '',
+    bookingType: searchParams.bookingType || 'oneway',
+    iAmTravelling: true,
     pickupPoint: '',
     dropPoint: ''
   });
+  const [passengerDetails, setPassengerDetails] = useState([]);
 
-  useEffect(() => {
-    if (bus && formData.travelDate) {
-      fetchSeatLayout();
-    }
-  }, [formData.travelDate]);
-
-  const fetchSeatLayout = async () => {
+  const fetchSeatLayout = useCallback(async () => {
     try {
       const response = await busAPI.getBusSeats(busId, formData.travelDate);
       if (response.data.success) {
@@ -41,15 +42,102 @@ const Booking = () => {
     } catch (error) {
       toast.error('Failed to fetch seat layout');
     }
-  };
+  }, [busId, formData.travelDate]);
+
+  useEffect(() => {
+    if (bus && formData.travelDate) {
+      fetchSeatLayout();
+    }
+  }, [bus, formData.travelDate, fetchSeatLayout]);
+
 
   const handleFormChange = (e) => {
-    const { name, value } = e.target;
-    setFormData({ ...formData, [name]: value });
+    const { name, value, type, checked } = e.target;
+    const updatedData = { ...formData, [name]: type === 'checkbox' ? checked : value };
+    setFormData(updatedData);
+
+    // When checking "I am travelling", populate first passenger with user details
+    if (name === 'iAmTravelling' && checked && passengerDetails.length > 0) {
+      const [firstName = '', lastName = ''] = user?.name?.split(' ') || [''];
+      const updated = [...passengerDetails];
+      updated[0] = {
+        ...updated[0],
+        firstName,
+        lastName,
+        gender: 'other'
+      };
+      
+      // Update registry for seat 1
+      setPassengerRegistry(prev => ({
+        ...prev,
+        [updated[0].seatNumber]: updated[0]
+      }));
+      
+      setPassengerDetails(updated);
+    }
+
+    // Clear first passenger details if unchecking "I am travelling"
+    if (name === 'iAmTravelling' && !checked && passengerDetails.length > 0) {
+      const updated = [...passengerDetails];
+      updated[0] = {
+        seatNumber: updated[0].seatNumber,
+        firstName: '',
+        lastName: '',
+        email: '',
+        phone: '',
+        gender: ''
+      };
+      
+      // Update registry for seat 1
+      setPassengerRegistry(prev => ({
+        ...prev,
+        [updated[0].seatNumber]: updated[0]
+      }));
+      
+      setPassengerDetails(updated);
+    }
+  };
+
+  const handlePassengerDetailChange = (index, field, value) => {
+    const updated = [...passengerDetails];
+    const seatNumber = updated[index].seatNumber;
+    
+    updated[index] = {
+      ...updated[index],
+      [field]: value
+    };
+    
+    // Also update in persistent registry
+    setPassengerRegistry(prev => ({
+      ...prev,
+      [seatNumber]: updated[index]
+    }));
+    
+    setPassengerDetails(updated);
   };
 
   const handleSeatSelect = (seats) => {
+    const [firstName = '', lastName = ''] = user?.name?.split(' ') || [''];
+
+    const newDetails = seats.map((seat, index) => {
+      // Check if this seat has previously entered details in the registry
+      if (passengerRegistry[seat]) {
+        return passengerRegistry[seat];
+      }
+
+      // Create new details for newly selected seat
+      return {
+        seatNumber: seat,
+        firstName: index === 0 && formData.iAmTravelling ? firstName : '',
+        lastName: index === 0 && formData.iAmTravelling ? lastName : '',
+        email: '',
+        phone: '',
+        gender: index === 0 && formData.iAmTravelling ? 'other' : ''
+      };
+    });
+
     setSelectedSeats(seats);
+    setPassengerDetails(newDetails);
   };
 
   const handleBooking = async (e) => {
@@ -59,6 +147,24 @@ const Booking = () => {
       toast.error('Please select at least one seat');
       return;
     }
+
+    if (passengerDetails.length !== selectedSeats.length) {
+      toast.error('Passenger count must match selected seats');
+      return;
+    }
+
+    const invalid = passengerDetails.some((p) => !p.firstName || !p.lastName || !p.gender);
+    if (invalid) {
+      toast.error('Fill in all passenger details');
+      return;
+    }
+
+    // Add email and phone from form to passenger details
+    const passengerDetailsWithContact = passengerDetails.map(p => ({
+      ...p,
+      email: formData.passengerEmail,
+      phone: formData.passengerPhone
+    }));
 
     setIsLoading(true);
 
@@ -70,8 +176,11 @@ const Booking = () => {
         passengerEmail: formData.passengerEmail,
         passengerPhone: formData.passengerPhone,
         travelDate: formData.travelDate,
+        returnDate: formData.returnDate,
+        bookingType: formData.bookingType,
         pickupPoint: formData.pickupPoint,
-        dropPoint: formData.dropPoint
+        dropPoint: formData.dropPoint,
+        passengerDetails: passengerDetailsWithContact
       });
 
       if (response.data.success) {
@@ -100,13 +209,18 @@ const Booking = () => {
 
       <div className="booking-content">
         <div className="seat-section">
-          {seatLayout.length > 0 && (
+          {seatLayout.length > 0 ? (
             <SeatSelector
               seatLayout={seatLayout}
               onSeatSelect={handleSeatSelect}
               selectedSeats={selectedSeats}
               price={bus.price}
             />
+          ) : (
+            <div style={{ padding: '40px', textAlign: 'center', color: '#999' }}>
+              <p>Loading seat layout...</p>
+              <small>Departure Date: {formData.travelDate || 'Not selected'}</small>
+            </div>
           )}
         </div>
 
@@ -115,48 +229,118 @@ const Booking = () => {
             <h3>Passenger & Travel Details</h3>
 
             <div className="form-group">
-              <label>Travel Date *</label>
+              <label>Travel Date</label>
               <input
                 type="date"
                 name="travelDate"
                 value={formData.travelDate}
-                onChange={handleFormChange}
-                required
+                readOnly
+                disabled
               />
             </div>
 
-            <div className="form-group">
-              <label>Passenger Name *</label>
-              <input
-                type="text"
-                name="passengerName"
-                value={formData.passengerName}
-                onChange={handleFormChange}
-                required
-              />
+            {formData.bookingType === 'roundtrip' && (
+              <div className="form-group">
+                <label>Return Date</label>
+                <input
+                  type="date"
+                  name="returnDate"
+                  value={formData.returnDate}
+                  readOnly
+                  disabled
+                />
+              </div>
+            )}
+
+            <div className="form-group checkbox-group">
+              <label className="checkbox-label">
+                <input
+                  type="checkbox"
+                  name="iAmTravelling"
+                  checked={formData.iAmTravelling}
+                  onChange={handleFormChange}
+                />
+                <span>I am travelling (fill my details for seat 1)</span>
+              </label>
             </div>
 
-            <div className="form-group">
-              <label>Email *</label>
-              <input
-                type="email"
-                name="passengerEmail"
-                value={formData.passengerEmail}
-                onChange={handleFormChange}
-                required
-              />
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '16px' }}>
+              <div className="form-group">
+                <label>User Name *</label>
+                <input
+                  type="text"
+                  name="passengerName"
+                  value={formData.passengerName}
+                  onChange={handleFormChange}
+                  required
+                />
+              </div>
+
+              <div className="form-group">
+                <label>Email *</label>
+                <input
+                  type="email"
+                  name="passengerEmail"
+                  value={formData.passengerEmail}
+                  onChange={handleFormChange}
+                  required
+                />
+              </div>
+
+              <div className="form-group">
+                <label>Phone *</label>
+                <input
+                  type="tel"
+                  name="passengerPhone"
+                  value={formData.passengerPhone}
+                  onChange={handleFormChange}
+                  required
+                />
+              </div>
             </div>
 
-            <div className="form-group">
-              <label>Phone *</label>
-              <input
-                type="tel"
-                name="passengerPhone"
-                value={formData.passengerPhone}
-                onChange={handleFormChange}
-                required
-              />
-            </div>
+            {selectedSeats.length > 0 && (
+              <div className="passenger-forms">
+                <h4>Passenger details</h4>
+                {selectedSeats.map((seat, index) => (
+                  <div key={seat} className="passenger-row">
+                    <h5>Seat {seat}</h5>
+                    <div className="form-group">
+                      <label>First Name</label>
+                      <input
+                        type="text"
+                        value={passengerDetails[index]?.firstName || ''}
+                        onChange={(e) => handlePassengerDetailChange(index, 'firstName', e.target.value)}
+                        required
+                      />
+                    </div>
+                    <div className="form-group">
+                      <label>Last Name</label>
+                      <input
+                        type="text"
+                        value={passengerDetails[index]?.lastName || ''}
+                        onChange={(e) => handlePassengerDetailChange(index, 'lastName', e.target.value)}
+                        required
+                      />
+                    </div>
+
+                    <div className="form-group">
+                      <label>Gender</label>
+                      <select
+                        value={passengerDetails[index]?.gender || ''}
+                        onChange={(e) => handlePassengerDetailChange(index, 'gender', e.target.value)}
+                        required
+                      >
+                        <option value="">Choose</option>
+                        <option value="male">Male</option>
+                        <option value="female">Female</option>
+                        <option value="other">Other</option>
+                      </select>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
 
             <div className="form-group">
               <label>Pickup Point</label>

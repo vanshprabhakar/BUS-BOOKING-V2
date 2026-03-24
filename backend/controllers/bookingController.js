@@ -16,6 +16,10 @@ exports.createBooking = async (req, res) => {
       passengerEmail,
       passengerPhone,
       travelDate,
+      returnDate,
+      bookingType,
+      passengerDetails,
+      passengerGender,
       pickupPoint,
       dropPoint
     } = req.body;
@@ -41,14 +45,31 @@ exports.createBooking = async (req, res) => {
     const existingBookings = await Booking.find({
       busId,
       travelDate: new Date(travelDate),
-      status: { $in: ['confirmed', 'pending'] }
+      status: { $in: ['payment_pending', 'confirmed'] }
     });
 
     const bookedSeats = [];
+    const genderOnSeat = {};
     existingBookings.forEach(booking => {
-      bookedSeats.push(...booking.seatsBooked);
+      booking.seatsBooked.forEach((seatNumber, index) => {
+        const passenger = booking.passengerDetails?.[index] || {};
+        bookedSeats.push(seatNumber);
+        genderOnSeat[seatNumber] = passenger.gender || 'other';
+      });
     });
 
+    // Seat adjacency gender policy (applies across existing bookings)
+    if (passengerDetails?.length > 0) {
+      seatsBooked.forEach((seatNum, idx) => {
+        const selectedGender = (passengerDetails[idx]?.gender || 'other').toLowerCase();
+        [seatNum - 1, seatNum + 1].forEach(adj => {
+          const adjacentGender = genderOnSeat[adj];
+          if (adjacentGender && selectedGender !== 'other' && adjacentGender !== 'other' && adjacentGender !== selectedGender) {
+            throw new Error(`Cannot select seat ${seatNum}: adjacent seat ${adj} is booked by ${adjacentGender}`);
+          }
+        });
+      });
+    }
     // Check if selected seats are already booked
     const conflictingSeats = seatsBooked.filter(seat => bookedSeats.includes(seat));
     if (conflictingSeats.length > 0) {
@@ -62,8 +83,12 @@ exports.createBooking = async (req, res) => {
     // Calculate total price
     const totalPrice = bus.price * seatsBooked.length;
 
+    // Generate unique booking ID
+    const bookingId = `BK${Date.now()}-${req.user._id.toString().slice(-6)}`;
+
     // Create booking
     const booking = new Booking({
+      bookingId,
       userId: req.user._id,
       busId,
       passengerName,
@@ -72,10 +97,21 @@ exports.createBooking = async (req, res) => {
       seatsBooked,
       numberOfPassengers: seatsBooked.length,
       travelDate: new Date(travelDate),
+      returnDate: returnDate ? new Date(returnDate) : null,
       pickupPoint,
       dropPoint,
       totalPrice,
-      status: 'pending',
+      bookingType: bookingType || 'oneway',
+      passengerDetails: passengerDetails || [
+        {
+          firstName: passengerName.split(' ')[0] || '',
+          lastName: passengerName.split(' ').slice(1).join(' ') || '',
+          email: passengerEmail,
+          phone: passengerPhone,
+          gender: passengerGender || 'other'
+        }
+      ],
+      status: 'payment_pending',
       paymentStatus: 'pending'
     });
 
@@ -149,7 +185,7 @@ exports.confirmBooking = async (req, res) => {
         await bus.save();
       }
     } else {
-      booking.status = 'cancelled';
+      booking.status = 'failed';
       booking.paymentStatus = 'failed';
 
       // Update payment status
@@ -171,6 +207,43 @@ exports.confirmBooking = async (req, res) => {
       success: false,
       message: error.message
     });
+  }
+};
+
+/**
+ * @desc    Bypass payment and confirm booking (admin or demo bypass)
+ * @route   POST /api/bookings/:id/bypass
+ * @access  Private
+ */
+exports.bypassBooking = async (req, res) => {
+  try {
+    const booking = await Booking.findById(req.params.id);
+    if (!booking) {
+      return res.status(404).json({ success: false, message: 'Booking not found' });
+    }
+
+    if (booking.userId.toString() !== req.user._id.toString() && req.user.role !== 'admin') {
+      return res.status(403).json({ success: false, message: 'Not authorized' });
+    }
+
+    booking.status = 'confirmed';
+    booking.paymentStatus = 'completed';
+    booking.paymentId = `BYPASS-${Date.now()}`;
+
+    await booking.save();
+
+    // update bus seats
+    const bus = await Bus.findById(booking.busId);
+    if (bus) {
+      bus.availableSeats = Math.max(0, bus.availableSeats - booking.seatsBooked.length);
+      await bus.save();
+    }
+
+    await Payment.findOneAndUpdate({ bookingId: booking._id }, { paymentStatus: 'completed', transactionId: booking.paymentId });
+
+    res.status(200).json({ success: true, message: 'Bypass confirmed', booking });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
   }
 };
 

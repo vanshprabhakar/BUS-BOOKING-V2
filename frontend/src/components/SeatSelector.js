@@ -2,8 +2,6 @@ import React, { useState } from 'react';
 import '../styles/SeatSelector.css';
 
 const SeatSelector = ({ seatLayout, onSeatSelect, selectedSeats = [], price }) => {
-  const [hoveredSeat, setHoveredSeat] = useState(null);
-
   const handleSeatClick = (seatNumber) => {
     const isSelected = selectedSeats.includes(seatNumber);
     if (isSelected) {
@@ -15,7 +13,11 @@ const SeatSelector = ({ seatLayout, onSeatSelect, selectedSeats = [], price }) =
 
   const getSeatClass = (seat) => {
     if (selectedSeats.includes(seat.seatNumber)) return 'seat selected';
-    if (seat.status === 'booked') return 'seat booked';
+    if (seat.status === 'booked') {
+      if (seat.gender === 'female') return 'seat booked-female';
+      if (seat.gender === 'male') return 'seat booked-male';
+      return 'seat booked';
+    }
     return 'seat available';
   };
 
@@ -31,8 +33,6 @@ const SeatSelector = ({ seatLayout, onSeatSelect, selectedSeats = [], price }) =
                 onClick={() => handleSeatClick(seat.seatNumber)}
                 disabled={seat.status === 'booked'}
                 title={`Seat ${seat.seatNumber}`}
-                onMouseEnter={() => setHoveredSeat(seat.seatNumber)}
-                onMouseLeave={() => setHoveredSeat(null)}
               >
                 {seat.seatNumber}
               </button>

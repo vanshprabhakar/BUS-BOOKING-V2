@@ -38,4 +38,11 @@ router.post('/:id/confirm', authenticateToken, bookingController.confirmBooking)
  */
 router.post('/:id/cancel', authenticateToken, bookingController.cancelBooking);
 
+/**
+ * @route   POST /api/bookings/:id/bypass
+ * @desc    Bypass payment and confirm booking (demo mode)
+ * @access  Private
+ */
+router.post('/:id/bypass', authenticateToken, bookingController.bypassBooking);
+
 module.exports = router;

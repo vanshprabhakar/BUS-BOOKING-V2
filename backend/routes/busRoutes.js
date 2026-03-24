@@ -26,6 +26,13 @@ router.get('/popular-routes', busController.getPopularRoutes);
 router.post('/search', busController.searchBuses);
 
 /**
+ * @route   GET /api/buses/suggestions?q=...
+ * @desc    Search suggestion for source/destination
+ * @access  Public
+ */
+router.get('/suggestions', busController.getSuggestions);
+
+/**
  * @route   GET /api/buses/:id
  * @desc    Get single bus details
  * @access  Public

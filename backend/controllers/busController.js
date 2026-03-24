@@ -116,18 +116,39 @@ exports.getBusSeats = async (req, res) => {
       status: { $in: ['confirmed', 'pending'] }
     });
 
-    // Get booked seats
+    // Get booked seats with gender tags
+    const bookedSeatMeta = {};
     const bookedSeats = [];
     bookings.forEach(booking => {
-      bookedSeats.push(...booking.seatsBooked);
+      booking.seatsBooked.forEach((seatNumber, index) => {
+        const passenger = booking.passengerDetails?.[index] || {};
+        bookedSeatMeta[seatNumber] = {
+          gender: passenger.gender || 'other',
+          bookingId: booking._id
+        };
+        if (!bookedSeats.includes(seatNumber)) {
+          bookedSeats.push(seatNumber);
+        }
+      });
     });
 
     // Update seat layout
     const seatLayout = bus.seatLayout.map(row =>
-      row.map(seat => ({
-        ...seat,
-        status: bookedSeats.includes(seat.seatNumber) ? 'booked' : 'available'
-      }))
+      row.map(seat => {
+        if (bookedSeatMeta[seat.seatNumber]) {
+          return {
+            ...seat,
+            status: 'booked',
+            gender: bookedSeatMeta[seat.seatNumber].gender
+          };
+        }
+
+        return {
+          ...seat,
+          status: 'available',
+          gender: null
+        };
+      })
     );
 
     res.status(200).json({
@@ -162,14 +183,36 @@ exports.searchBuses = async (req, res) => {
       });
     }
 
-    const filter = {
-      source: source.toUpperCase(),
-      destination: destination.toUpperCase(),
+    const fuzzySource = new RegExp(source.replace(/\W/g, ''), 'i');
+    const fuzzyDestination = new RegExp(destination.replace(/\W/g, ''), 'i');
+
+    let filter = {
       isActive: true,
       price: { $gte: priceMin, $lte: priceMax }
     };
 
     if (busType) filter.busType = busType;
+
+    // Elasticsearch integration placeholder:
+    // if (process.env.ELASTICSEARCH_URL) { ... }
+
+    // fallback fuzzy matching via MongoDB regex
+    filter.$and = [
+      {
+        $or: [
+          { source: { $regex: fuzzySource } },
+          { source: { $regex: new RegExp(source.split('').join('.*'), 'i') } }
+        ]
+      },
+      {
+        $or: [
+          { destination: { $regex: fuzzyDestination } },
+          { destination: { $regex: new RegExp(destination.split('').join('.*'), 'i') } }
+        ]
+      }
+    ];
+
+    // Date is handled in seat availability check rather than bus row (bus is static by route).
 
     const buses = await Bus.find(filter).sort({ price: 1 });
 
@@ -191,6 +234,27 @@ exports.searchBuses = async (req, res) => {
  * @route   GET /api/buses/popular-routes
  * @access  Public
  */
+exports.getSuggestions = async (req, res) => {
+  try {
+    const { q } = req.query;
+
+    if (!q) {
+      return res.status(400).json({ success: false, message: 'Query param q is required' });
+    }
+
+    const regex = new RegExp(q, 'i');
+
+    const sources = await Bus.distinct('source', { source: { $regex: regex }, isActive:true });
+    const destinations = await Bus.distinct('destination', { destination: { $regex: regex }, isActive:true });
+
+    const combined = [...new Set([...sources, ...destinations])];
+
+    res.status(200).json({ success: true, suggestions: combined.slice(0, 10) });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
 exports.getPopularRoutes = async (req, res) => {
   try {
     const routes = await Bus.aggregate([
