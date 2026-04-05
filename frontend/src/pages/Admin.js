@@ -1,14 +1,16 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import '../styles/Admin.css';
 import { adminAPI, busAPI } from '../services/api';
 import { toast } from 'react-toastify';
-import { formatPrice, formatDate } from '../utils/helpers';
+import { formatPrice } from '../utils/helpers';
 
 const Admin = () => {
   const [activeTab, setActiveTab] = useState('dashboard');
   const [analytics, setAnalytics] = useState(null);
   const [bookings, setBookings] = useState([]);
   const [buses, setBuses] = useState([]);
+  const [dateOverview, setDateOverview] = useState([]);
+  const [overviewDate, setOverviewDate] = useState(new Date().toISOString().slice(0, 10));
   const [users, setUsers] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
   const [formData, setFormData] = useState({
@@ -23,13 +25,6 @@ const Admin = () => {
     price: 0,
     amenities: 'WiFi,AC,Reading Light'
   });
-
-  useEffect(() => {
-    if (activeTab === 'dashboard') fetchAnalytics();
-    else if (activeTab === 'bookings') fetchBookings();
-    else if (activeTab === 'buses') fetchBuses();
-    else if (activeTab === 'users') fetchUsers();
-  }, [activeTab]);
 
   const fetchAnalytics = async () => {
     setIsLoading(true);
@@ -72,6 +67,36 @@ const Admin = () => {
       setIsLoading(false);
     }
   };
+
+  const fetchDateOverview = useCallback(async () => {
+    setIsLoading(true);
+    try {
+      const response = await adminAPI.getBusesDateOverview(overviewDate);
+      if (response.data.success) {
+        setDateOverview(response.data.buses);
+      }
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Failed to fetch bus date overview');
+    } finally {
+      setIsLoading(false);
+    }
+  }, [overviewDate]);
+
+  useEffect(() => {
+    if (activeTab === 'dashboard') fetchAnalytics();
+    else if (activeTab === 'bookings') fetchBookings();
+    else if (activeTab === 'buses') {
+      fetchBuses();
+      fetchDateOverview();
+    }
+    else if (activeTab === 'users') fetchUsers();
+  }, [activeTab, fetchDateOverview]);
+
+  useEffect(() => {
+    if (activeTab === 'buses') {
+      fetchDateOverview();
+    }
+  }, [activeTab, fetchDateOverview]);
 
   const fetchUsers = async () => {
     setIsLoading(true);
@@ -164,6 +189,8 @@ const Admin = () => {
       </div>
 
       <div className="admin-content">
+        {isLoading && <p>Loading...</p>}
+
         {activeTab === 'dashboard' && analytics && (
           <div className="dashboard">
             <div className="stat-card">
@@ -292,6 +319,45 @@ const Admin = () => {
                         Delete
                       </button>
                     </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+
+            <h3 style={{ marginTop: '24px' }}>Date-wise Bus Occupancy</h3>
+            <div className="form-group" style={{ maxWidth: '260px', marginBottom: '12px' }}>
+              <label>Select Date</label>
+              <input
+                type="date"
+                value={overviewDate}
+                onChange={(e) => setOverviewDate(e.target.value)}
+              />
+            </div>
+
+            <table className="buses-table">
+              <thead>
+                <tr>
+                  <th>Operator</th>
+                  <th>Route</th>
+                  <th>Type</th>
+                  <th>Total Seats</th>
+                  <th>Booked</th>
+                  <th>Pending</th>
+                  <th>Available</th>
+                  <th>Schedule</th>
+                </tr>
+              </thead>
+              <tbody>
+                {dateOverview.map((bus) => (
+                  <tr key={`overview-${bus._id}`}>
+                    <td>{bus.operatorName}</td>
+                    <td>{bus.source} → {bus.destination}</td>
+                    <td>{bus.busType}</td>
+                    <td>{bus.totalSeats}</td>
+                    <td>{bus.bookedSeatsForDate}</td>
+                    <td>{bus.pendingSeatsForDate}</td>
+                    <td>{bus.availableSeatsForDate}</td>
+                    <td>{bus.hasSchedule ? 'Yes' : 'No'}</td>
                   </tr>
                 ))}
               </tbody>

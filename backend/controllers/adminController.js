@@ -2,6 +2,7 @@ const Bus = require('../models/Bus');
 const Booking = require('../models/Booking');
 const User = require('../models/User');
 const Payment = require('../models/Payment');
+const BusSchedule = require('../models/BusSchedule');
 
 /**
  * @desc    Add a new bus
@@ -339,6 +340,99 @@ exports.updateUserRole = async (req, res) => {
       success: true,
       message: 'User role updated successfully',
       user
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: error.message
+    });
+  }
+};
+
+/**
+ * @desc    Get bus occupancy details for a specific date
+ * @route   GET /api/admin/buses/date-overview?date=YYYY-MM-DD
+ * @access  Private/Admin
+ */
+exports.getBusesDateOverview = async (req, res) => {
+  try {
+    const { date } = req.query;
+    if (!date) {
+      return res.status(400).json({
+        success: false,
+        message: 'Query param "date" is required'
+      });
+    }
+
+    const selectedDate = new Date(date);
+    if (Number.isNaN(selectedDate.getTime())) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid date format. Use YYYY-MM-DD'
+      });
+    }
+
+    const buses = await Bus.find({ isActive: true }).sort({ createdAt: -1 }).lean();
+    const schedules = await BusSchedule.find({ scheduleDate: selectedDate }).lean();
+
+    const scheduleByBusId = new Map(
+      schedules.map((schedule) => [schedule.busId.toString(), schedule])
+    );
+
+    const bookings = await Booking.find({
+      status: { $in: ['payment_pending', 'confirmed'] },
+      $or: [
+        { travelDate: selectedDate },
+        { returnDate: selectedDate }
+      ]
+    }).lean();
+
+    const bookingStats = {};
+    bookings.forEach((booking) => {
+      const travelBusId = booking.busId?.toString();
+      const returnBusId = booking.returnBusId?.toString();
+      const status = booking.status;
+
+      if (travelBusId && booking.travelDate?.toISOString() === selectedDate.toISOString()) {
+        if (!bookingStats[travelBusId]) {
+          bookingStats[travelBusId] = { confirmed: 0, pending: 0 };
+        }
+        bookingStats[travelBusId][status === 'confirmed' ? 'confirmed' : 'pending'] += booking.seatsBooked?.length || 0;
+      }
+
+      if (returnBusId && booking.returnDate?.toISOString() === selectedDate.toISOString()) {
+        if (!bookingStats[returnBusId]) {
+          bookingStats[returnBusId] = { confirmed: 0, pending: 0 };
+        }
+        bookingStats[returnBusId][status === 'confirmed' ? 'confirmed' : 'pending'] += booking.returnSeatsBooked?.length || 0;
+      }
+    });
+
+    const overview = buses.map((bus) => {
+      const schedule = scheduleByBusId.get(bus._id.toString());
+      const stats = bookingStats[bus._id.toString()] || { confirmed: 0, pending: 0 };
+      const bookedFromSchedule = schedule
+        ? schedule.seatLayout.flat().filter((seat) => seat.status === 'booked').length
+        : stats.confirmed;
+      const blockedFromSchedule = schedule
+        ? schedule.seatLayout.flat().filter((seat) => seat.status === 'blocked').length
+        : stats.pending;
+
+      return {
+        ...bus,
+        selectedDate,
+        bookedSeatsForDate: bookedFromSchedule,
+        pendingSeatsForDate: blockedFromSchedule,
+        availableSeatsForDate: Math.max(0, bus.totalSeats - bookedFromSchedule - blockedFromSchedule),
+        hasSchedule: Boolean(schedule)
+      };
+    });
+
+    res.status(200).json({
+      success: true,
+      date: selectedDate,
+      count: overview.length,
+      buses: overview
     });
   } catch (error) {
     res.status(500).json({
