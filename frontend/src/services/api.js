@@ -68,6 +68,7 @@ export const adminAPI = {
   addBus: (data) => api.post('/admin/buses', data),
   updateBus: (id, data) => api.put(`/admin/buses/${id}`, data),
   deleteBus: (id) => api.delete(`/admin/buses/${id}`),
+  getBusesDateOverview: (date) => api.get('/admin/buses/date-overview', { params: { date } }),
   getAllBookings: (params) => api.get('/admin/bookings', { params }),
   getAnalytics: () => api.get('/admin/analytics'),
   getAllUsers: (params) => api.get('/admin/users', { params }),

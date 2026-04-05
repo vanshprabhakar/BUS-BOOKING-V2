@@ -27,6 +27,11 @@ exports.createBooking = async (req, res) => {
       dropPoint
     } = req.body;
 
+    const isSameDate = (value, target) => {
+      if (!value || !target) return false;
+      return new Date(value).toISOString().slice(0, 10) === new Date(target).toISOString().slice(0, 10);
+    };
+
     // Validate input
     if (!busId || !seatsBooked || !passengerName || !travelDate) {
       return res.status(400).json({
@@ -98,13 +103,6 @@ exports.createBooking = async (req, res) => {
         });
       }
 
-      if (returnSeatsBooked.length !== seatsBooked.length) {
-        return res.status(400).json({
-          success: false,
-          message: 'Return seat count must match departure seat count for round-trip bookings'
-        });
-      }
-
       await expireOldPendingBookings({ busId: returnBusId, travelDate: returnScheduleDate });
       const returnBookings = await Booking.find({
         status: { $in: ['payment_pending', 'confirmed'] },
@@ -116,13 +114,13 @@ exports.createBooking = async (req, res) => {
 
       const returnBookedSeats = [];
       returnBookings.forEach((booking) => {
-        if (booking.busId?.toString() === returnBusId.toString() && booking.travelDate?.toISOString() === returnScheduleDate.toISOString()) {
+        if (booking.busId?.toString() === returnBusId.toString() && isSameDate(booking.travelDate, returnScheduleDate)) {
           booking.seatsBooked.forEach((seatNumber) => {
             if (!returnBookedSeats.includes(seatNumber)) returnBookedSeats.push(seatNumber);
           });
         }
 
-        if (booking.returnBusId?.toString() === returnBusId.toString() && booking.returnDate?.toISOString() === returnScheduleDate.toISOString()) {
+        if (booking.returnBusId?.toString() === returnBusId.toString() && isSameDate(booking.returnDate, returnScheduleDate)) {
           booking.returnSeatsBooked?.forEach((seatNumber) => {
             if (!returnBookedSeats.includes(seatNumber)) returnBookedSeats.push(seatNumber);
           });

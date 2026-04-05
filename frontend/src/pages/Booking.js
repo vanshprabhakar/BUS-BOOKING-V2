@@ -14,7 +14,7 @@ const Booking = () => {
   const navigate = useNavigate();
   const { user } = useContext(AuthContext);
   const { searchParams } = useContext(SearchContext);
-  const bus = location.state?.bus;
+  const [busInfo, setBusInfo] = useState(location.state?.bus || null);
 
   const [selectedSeats, setSelectedSeats] = useState([]);
   const [seatLayout, setSeatLayout] = useState([]);
@@ -49,14 +49,30 @@ const Booking = () => {
     }
   }, [busId, formData.travelDate]);
 
+  const fetchBusDetails = useCallback(async () => {
+    if (busInfo) return;
+    try {
+      const response = await busAPI.getBusById(busId);
+      if (response.data.success) {
+        setBusInfo(response.data.bus);
+      }
+    } catch (error) {
+      toast.error('Failed to load bus details');
+    }
+  }, [busId, busInfo]);
+
   useEffect(() => {
-    if (bus && formData.travelDate) {
+    fetchBusDetails();
+  }, [fetchBusDetails]);
+
+  useEffect(() => {
+    if (busInfo && formData.travelDate) {
       fetchSeatLayout();
     }
-  }, [bus, formData.travelDate, fetchSeatLayout]);
+  }, [busInfo, formData.travelDate, fetchSeatLayout]);
 
   const fetchReturnBuses = useCallback(async () => {
-    if (formData.bookingType !== 'roundtrip' || !bus || !formData.returnDate) {
+    if (formData.bookingType !== 'roundtrip' || !busInfo || !formData.returnDate) {
       setReturnBuses([]);
       setReturnBus(null);
       setReturnSeatLayout([]);
@@ -67,8 +83,8 @@ const Booking = () => {
     setIsReturnLoading(true);
     try {
       const response = await busAPI.searchBuses({
-        source: bus.destination,
-        destination: bus.source,
+        source: busInfo.destination,
+        destination: busInfo.source,
         date: formData.returnDate,
         busType: searchParams.busType || ''
       });
@@ -82,7 +98,7 @@ const Booking = () => {
     } finally {
       setIsReturnLoading(false);
     }
-  }, [bus, formData.bookingType, formData.returnDate, searchParams.busType]);
+  }, [busInfo, formData.bookingType, formData.returnDate, searchParams.busType]);
 
   useEffect(() => {
     fetchReturnBuses();
@@ -235,10 +251,6 @@ const Booking = () => {
         toast.error('Please select seats for the return bus');
         return;
       }
-      if (selectedReturnSeats.length !== selectedSeats.length) {
-        toast.error('Return seat count must match departure seat count');
-        return;
-      }
     }
 
     // Add email and phone from form to passenger details
@@ -285,15 +297,15 @@ const Booking = () => {
     }
   };
 
-  if (!bus) {
+  if (!busInfo) {
     return <div className="booking-container"><p>Bus not found</p></div>;
   }
 
   return (
     <div className="booking-container">
       <div className="booking-header">
-        <h2>{bus.operatorName} - Select Seats</h2>
-        <p>{bus.source} → {bus.destination}</p>
+        <h2>{busInfo.operatorName} - Select Seats</h2>
+        <p>{busInfo.source} → {busInfo.destination}</p>
       </div>
 
       <div className="booking-content">
@@ -303,7 +315,7 @@ const Booking = () => {
               seatLayout={seatLayout}
               onSeatSelect={handleSeatSelect}
               selectedSeats={selectedSeats}
-              price={bus.price}
+              price={busInfo.price}
             />
           ) : (
             <div style={{ padding: '40px', textAlign: 'center', color: '#999' }}>
@@ -316,7 +328,7 @@ const Booking = () => {
         {formData.bookingType === 'roundtrip' && (
           <div className="return-trip-section">
             <h3>Return Bus Selection</h3>
-            <p>{bus.destination} → {bus.source} on {formData.returnDate}</p>
+            <p>{busInfo.destination} → {busInfo.source} on {formData.returnDate}</p>
 
             {isReturnLoading ? (
               <div style={{ padding: '20px', color: '#666' }}>Loading return buses...</div>
@@ -534,7 +546,7 @@ const Booking = () => {
               )}
               <p className="summary-item">
                 <span>Price per Seat:</span>
-                <span>{formatPrice(bus.price)}</span>
+                <span>{formatPrice(busInfo.price)}</span>
               </p>
               {formData.bookingType === 'roundtrip' && returnBus && (
                 <p className="summary-item">
@@ -544,7 +556,7 @@ const Booking = () => {
               )}
               <p className="summary-item total">
                 <span>Total Price:</span>
-                <span>{formatPrice((selectedSeats.length * bus.price) + (selectedReturnSeats.length * (returnBus?.price || 0)))}</span>
+                <span>{formatPrice((selectedSeats.length * busInfo.price) + (selectedReturnSeats.length * (returnBus?.price || 0)))}</span>
               </p>
             </div>
 

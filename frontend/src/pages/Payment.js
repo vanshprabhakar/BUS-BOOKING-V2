@@ -1,4 +1,4 @@
-import React, { useState, useContext } from 'react';
+import React, { useState, useCallback } from 'react';
 import '../styles/Payment.css';
 import { useParams, useLocation, useNavigate } from 'react-router-dom';
 import { bookingAPI } from '../services/api';
@@ -22,23 +22,23 @@ const Payment = () => {
     ? new Date(bookingInfo.paymentRetryUntil) < new Date()
     : false;
 
-  React.useEffect(() => {
-    const fetchBookingDetails = async () => {
-      if (!bookingInfo) {
-        try {
-          const response = await bookingAPI.getBookingDetails(bookingId);
-          if (response.data.success) {
-            setBookingInfo(response.data.booking);
-          }
-        } catch (error) {
-          toast.error('Failed to load booking details');
-          navigate('/my-bookings');
-        }
+  const fetchBookingDetails = useCallback(async () => {
+    try {
+      const response = await bookingAPI.getBookingDetails(bookingId);
+      if (response.data.success) {
+        setBookingInfo(response.data.booking);
       }
-    };
+    } catch (error) {
+      toast.error('Failed to load booking details');
+      navigate('/my-bookings');
+    }
+  }, [bookingId, navigate]);
 
-    fetchBookingDetails();
-  }, [bookingId, bookingInfo, navigate]);
+  React.useEffect(() => {
+    if (!bookingInfo) {
+      fetchBookingDetails();
+    }
+  }, [bookingInfo, fetchBookingDetails]);
 
   React.useEffect(() => {
     if (!bookingInfo?.paymentRetryUntil || bookingInfo.status !== 'payment_pending') {
@@ -102,10 +102,30 @@ const Payment = () => {
       await bookingAPI.confirmBooking(bookingId, {
         paymentStatus: 'failed'
       });
-      toast.error('Payment failed. Please try again.');
-      navigate('/my-bookings');
+      await fetchBookingDetails();
+      toast.error('Payment failed. You can retry payment or cancel this booking.');
     } catch (error) {
       toast.error('Error processing payment failure');
+    }
+  };
+
+  const handleCancelBooking = async () => {
+    if (!bookingInfo || bookingInfo.status !== 'payment_pending') return;
+
+    setIsProcessing(true);
+    try {
+      const response = await bookingAPI.cancelBooking(bookingId, {
+        cancellationReason: 'User cancelled during payment flow'
+      });
+
+      if (response.data.success) {
+        toast.success('Booking cancelled successfully');
+        navigate('/my-bookings');
+      }
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Unable to cancel booking');
+    } finally {
+      setIsProcessing(false);
     }
   };
 
@@ -205,13 +225,15 @@ const Payment = () => {
             Simulate Failure
           </button>
 
-          <button
-            className="cancel-btn"
-            onClick={() => navigate('/my-bookings')}
-            disabled={isProcessing}
-          >
-            Cancel
-          </button>
+          {bookingInfo.status === 'payment_pending' && (
+            <button
+              className="cancel-btn"
+              onClick={handleCancelBooking}
+              disabled={isProcessing}
+            >
+              Cancel Booking
+            </button>
+          )}
 
           {bypassEnabled && (
             <button

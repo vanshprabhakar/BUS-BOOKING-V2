@@ -15,7 +15,7 @@ const busScheduleSchema = new mongoose.Schema(
       type: [[
         {
           seatNumber: Number,
-          status: { type: String, enum: ['available', 'booked', 'locked'], default: 'available' },
+          status: { type: String, enum: ['available', 'booked', 'blocked', 'locked'], default: 'available' },
           gender: { type: String, enum: ['male', 'female', 'other', null], default: null },
           price: Number
         }

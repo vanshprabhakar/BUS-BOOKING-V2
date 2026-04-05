@@ -54,4 +54,11 @@ router.get('/users', authenticateToken, authorizeAdmin, adminController.getAllUs
  */
 router.put('/users/:id/role', authenticateToken, authorizeAdmin, adminController.updateUserRole);
 
+/**
+ * @route   GET /api/admin/buses/date-overview
+ * @desc    Get date-wise occupancy details for all buses
+ * @access  Private/Admin
+ */
+router.get('/buses/date-overview', authenticateToken, authorizeAdmin, adminController.getBusesDateOverview);
+
 module.exports = router;

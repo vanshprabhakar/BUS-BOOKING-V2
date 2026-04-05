@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useContext } from 'react';
+import React, { useState, useEffect, useContext, useCallback } from 'react';
 import '../styles/Buses.css';
 import { busAPI } from '../services/api';
 import BusCard from '../components/BusCard';
@@ -16,11 +16,7 @@ const Buses = () => {
   });
   const { searchParams } = useContext(SearchContext);
 
-  useEffect(() => {
-    fetchBuses();
-  }, [searchParams]);
-
-  const fetchBuses = async () => {
+  const fetchBuses = useCallback(async () => {
     setIsLoading(true);
     try {
       const response = await busAPI.searchBuses({
@@ -49,7 +45,11 @@ const Buses = () => {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [filters.busType, filters.priceMax, filters.priceMin, filters.sortBy, searchParams.date, searchParams.destination, searchParams.source]);
+
+  useEffect(() => {
+    fetchBuses();
+  }, [fetchBuses]);
 
   const handleFilterChange = (e) => {
     const { name, value } = e.target;
