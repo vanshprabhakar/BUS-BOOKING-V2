@@ -44,7 +44,13 @@ const BookingConfirmation = () => {
           <p><strong>Status:</strong> {booking.status.toUpperCase()}</p>
           <p><strong>Travel Date:</strong> {formatDate(booking.travelDate)}</p>
           {booking.returnDate && <p><strong>Return Date:</strong> {formatDate(booking.returnDate)}</p>}
-          <p><strong>Seats:</strong> {booking.seatsBooked.join(', ')}</p>
+          <p><strong>Departure Seats:</strong> {booking.seatsBooked.join(', ')}</p>
+          {booking.returnSeatsBooked?.length > 0 && (
+            <p><strong>Return Seats:</strong> {booking.returnSeatsBooked.join(', ')}</p>
+          )}
+          {booking.returnBusId && (
+            <p><strong>Return Bus:</strong> {booking.returnBusId.operatorName || booking.returnBusId}</p>
+          )}
           <p><strong>Total:</strong> {formatPrice(booking.totalPrice)}</p>
           <p><strong>Passenger:</strong> {booking.passengerName}</p>
         </div>

@@ -18,6 +18,11 @@ const Booking = () => {
 
   const [selectedSeats, setSelectedSeats] = useState([]);
   const [seatLayout, setSeatLayout] = useState([]);
+  const [returnBuses, setReturnBuses] = useState([]);
+  const [returnBus, setReturnBus] = useState(null);
+  const [returnSeatLayout, setReturnSeatLayout] = useState([]);
+  const [selectedReturnSeats, setSelectedReturnSeats] = useState([]);
+  const [isReturnLoading, setIsReturnLoading] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [passengerRegistry, setPassengerRegistry] = useState({}); // Persistent storage by seat number
   const [formData, setFormData] = useState({
@@ -50,6 +55,53 @@ const Booking = () => {
     }
   }, [bus, formData.travelDate, fetchSeatLayout]);
 
+  const fetchReturnBuses = useCallback(async () => {
+    if (formData.bookingType !== 'roundtrip' || !bus || !formData.returnDate) {
+      setReturnBuses([]);
+      setReturnBus(null);
+      setReturnSeatLayout([]);
+      setSelectedReturnSeats([]);
+      return;
+    }
+
+    setIsReturnLoading(true);
+    try {
+      const response = await busAPI.searchBuses({
+        source: bus.destination,
+        destination: bus.source,
+        date: formData.returnDate,
+        busType: searchParams.busType || ''
+      });
+
+      if (response.data.success) {
+        setReturnBuses(response.data.buses);
+      }
+    } catch (error) {
+      toast.error('Failed to load return buses');
+      setReturnBuses([]);
+    } finally {
+      setIsReturnLoading(false);
+    }
+  }, [bus, formData.bookingType, formData.returnDate, searchParams.busType]);
+
+  useEffect(() => {
+    fetchReturnBuses();
+  }, [fetchReturnBuses]);
+
+  const handleSelectReturnBus = async (bus) => {
+    setReturnBus(bus);
+    setSelectedReturnSeats([]);
+    setReturnSeatLayout([]);
+
+    try {
+      const response = await busAPI.getBusSeats(bus._id, formData.returnDate);
+      if (response.data.success) {
+        setReturnSeatLayout(response.data.seatLayout);
+      }
+    } catch (error) {
+      toast.error('Failed to load return seat layout');
+    }
+  };
 
   const handleFormChange = (e) => {
     const { name, value, type, checked } = e.target;
@@ -117,15 +169,20 @@ const Booking = () => {
   };
 
   const handleSeatSelect = (seats) => {
+    console.log('Booking: handleSeatSelect called with seats:', seats);
+    const normalizedSeats = Array.isArray(seats)
+      ? Array.from(new Set(seats.map((seat) => Number(seat)).filter((seatNum) => !Number.isNaN(seatNum))))
+          .sort((a, b) => a - b)
+      : [];
+    console.log('Booking: normalizedSeats:', normalizedSeats);
+
     const [firstName = '', lastName = ''] = user?.name?.split(' ') || [''];
 
-    const newDetails = seats.map((seat, index) => {
-      // Check if this seat has previously entered details in the registry
+    const newDetails = normalizedSeats.map((seat, index) => {
       if (passengerRegistry[seat]) {
         return passengerRegistry[seat];
       }
 
-      // Create new details for newly selected seat
       return {
         seatNumber: seat,
         firstName: index === 0 && formData.iAmTravelling ? firstName : '',
@@ -136,8 +193,18 @@ const Booking = () => {
       };
     });
 
-    setSelectedSeats(seats);
+    console.log('Booking: setting selectedSeats to:', normalizedSeats);
+    setSelectedSeats(normalizedSeats);
     setPassengerDetails(newDetails);
+  };
+
+  const handleReturnSeatSelect = (seats) => {
+    const normalizedSeats = Array.isArray(seats)
+      ? Array.from(new Set(seats.map((seat) => Number(seat)).filter((seatNum) => !Number.isNaN(seatNum))))
+          .sort((a, b) => a - b)
+      : [];
+
+    setSelectedReturnSeats(normalizedSeats);
   };
 
   const handleBooking = async (e) => {
@@ -159,6 +226,21 @@ const Booking = () => {
       return;
     }
 
+    if (formData.bookingType === 'roundtrip') {
+      if (!returnBus) {
+        toast.error('Please select a return bus');
+        return;
+      }
+      if (selectedReturnSeats.length === 0) {
+        toast.error('Please select seats for the return bus');
+        return;
+      }
+      if (selectedReturnSeats.length !== selectedSeats.length) {
+        toast.error('Return seat count must match departure seat count');
+        return;
+      }
+    }
+
     // Add email and phone from form to passenger details
     const passengerDetailsWithContact = passengerDetails.map(p => ({
       ...p,
@@ -169,7 +251,7 @@ const Booking = () => {
     setIsLoading(true);
 
     try {
-      const response = await bookingAPI.createBooking({
+      const payload = {
         busId,
         seatsBooked: selectedSeats,
         passengerName: formData.passengerName,
@@ -181,7 +263,14 @@ const Booking = () => {
         pickupPoint: formData.pickupPoint,
         dropPoint: formData.dropPoint,
         passengerDetails: passengerDetailsWithContact
-      });
+      };
+
+      if (formData.bookingType === 'roundtrip') {
+        payload.returnBusId = returnBus._id;
+        payload.returnSeatsBooked = selectedReturnSeats;
+      }
+
+      const response = await bookingAPI.createBooking(payload);
 
       if (response.data.success) {
         toast.success('Booking created! Proceeding to payment...');
@@ -223,6 +312,74 @@ const Booking = () => {
             </div>
           )}
         </div>
+
+        {formData.bookingType === 'roundtrip' && (
+          <div className="return-trip-section">
+            <h3>Return Bus Selection</h3>
+            <p>{bus.destination} → {bus.source} on {formData.returnDate}</p>
+
+            {isReturnLoading ? (
+              <div style={{ padding: '20px', color: '#666' }}>Loading return buses...</div>
+            ) : returnBuses.length > 0 ? (
+              <div className="return-bus-list">
+                {returnBuses.map((candidate) => (
+                  <div
+                    key={candidate._id}
+                    className={`return-bus-card ${returnBus?._id === candidate._id ? 'selected' : ''}`}
+                    style={{
+                      border: returnBus?._id === candidate._id ? '2px solid #667eea' : '1px solid #ccc',
+                      borderRadius: '10px',
+                      padding: '16px',
+                      marginBottom: '12px',
+                      background: returnBus?._id === candidate._id ? '#f0f4ff' : '#fff'
+                    }}
+                  >
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
+                      <strong>{candidate.operatorName}</strong>
+                      <span>{candidate.source} → {candidate.destination}</span>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap' }}>
+                      <span>{candidate.busType}</span>
+                      <span>{candidate.availableSeats} seats</span>
+                      <span>₹{candidate.price}</span>
+                    </div>
+                    <button
+                      type="button"
+                      className="select-btn"
+                      style={{ marginTop: '12px' }}
+                      onClick={() => handleSelectReturnBus(candidate)}
+                    >
+                      {returnBus?._id === candidate._id ? 'Selected' : 'Select Return Bus'}
+                    </button>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div style={{ padding: '20px', color: '#666' }}>
+                No return buses found for the selected return date.
+              </div>
+            )}
+
+            {returnBus && (
+              <div className="seat-section" style={{ marginTop: '24px' }}>
+                <h4>Return Seat Selection - {returnBus.operatorName}</h4>
+                {returnSeatLayout.length > 0 ? (
+                  <SeatSelector
+                    seatLayout={returnSeatLayout}
+                    onSeatSelect={handleReturnSeatSelect}
+                    selectedSeats={selectedReturnSeats}
+                    price={returnBus.price}
+                  />
+                ) : (
+                  <div style={{ padding: '40px', textAlign: 'center', color: '#999' }}>
+                    <p>Loading return seat layout...</p>
+                    <small>Return Date: {formData.returnDate || 'Not selected'}</small>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
 
         <div className="booking-form-section">
           <form onSubmit={handleBooking} className="booking-form">
@@ -366,16 +523,28 @@ const Booking = () => {
 
             <div className="booking-summary">
               <p className="summary-item">
-                <span>Seats Selected:</span>
+                <span>Departure Seats:</span>
                 <span>{selectedSeats.join(', ') || 'None'}</span>
               </p>
+              {formData.bookingType === 'roundtrip' && (
+                <p className="summary-item">
+                  <span>Return Seats:</span>
+                  <span>{selectedReturnSeats.join(', ') || 'None'}</span>
+                </p>
+              )}
               <p className="summary-item">
                 <span>Price per Seat:</span>
                 <span>{formatPrice(bus.price)}</span>
               </p>
+              {formData.bookingType === 'roundtrip' && returnBus && (
+                <p className="summary-item">
+                  <span>Return Price per Seat:</span>
+                  <span>{formatPrice(returnBus.price)}</span>
+                </p>
+              )}
               <p className="summary-item total">
                 <span>Total Price:</span>
-                <span>{formatPrice(selectedSeats.length * bus.price)}</span>
+                <span>{formatPrice((selectedSeats.length * bus.price) + (selectedReturnSeats.length * (returnBus?.price || 0)))}</span>
               </p>
             </div>
 

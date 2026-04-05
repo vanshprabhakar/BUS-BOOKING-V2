@@ -103,7 +103,8 @@
 }
 
 .view-btn,
-.cancel-btn {
+.cancel-btn,
+.retry-btn {
   flex: 1;
   padding: 10px 15px;
   border: none;
@@ -112,6 +113,25 @@
   cursor: pointer;
   font-size: 14px;
   transition: all 0.3s ease;
+}
+
+.retry-btn {
+  background: linear-gradient(135deg, #f6c343 0%, #f47732 100%);
+  color: white;
+}
+
+.retry-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 3px 10px rgba(246, 195, 67, 0.3);
+}
+
+.expired-note {
+  flex: 1;
+  align-self: center;
+  color: #dc3545;
+  font-size: 13px;
+  font-weight: 600;
+  text-align: center;
 }
 
 .view-btn {
@@ -211,4 +231,15 @@
   .booking-actions {
     flex-direction: column;
   }
+}
+
+.booking-type {
+  background: #e8f4f8;
+  color: #1c7ed6;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  margin-top: 8px;
+  display: inline-block;
 }

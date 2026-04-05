@@ -17,6 +17,11 @@ const bookingSchema = new mongoose.Schema(
       ref: 'Bus',
       required: true
     },
+    returnBusId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Bus',
+      default: null
+    },
     passengerName: {
       type: String,
       required: true,
@@ -40,6 +45,10 @@ const bookingSchema = new mongoose.Schema(
         },
         message: 'At least one seat must be booked'
       }
+    },
+    returnSeatsBooked: {
+      type: [Number],
+      default: []
     },
     numberOfPassengers: {
       type: Number,
@@ -65,6 +74,11 @@ const bookingSchema = new mongoose.Schema(
     returnDate: {
       type: Date,
       default: null
+    },
+    returnTotalPrice: {
+      type: Number,
+      default: 0,
+      min: 0
     },
     passengerDetails: {
       type: [
@@ -92,6 +106,10 @@ const bookingSchema = new mongoose.Schema(
       type: String,
       enum: ['pending', 'completed', 'failed'],
       default: 'pending'
+    },
+    paymentRetryUntil: {
+      type: Date,
+      default: null
     },
     paymentId: String,
     bookingRemarks: String,

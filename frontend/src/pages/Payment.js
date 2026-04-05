@@ -13,10 +13,65 @@ const Payment = () => {
   const bypassEnabled = queryParams.get('bypass') === 'true';
   const booking = location.state?.booking;
 
+  const [bookingInfo, setBookingInfo] = useState(booking || null);
   const [paymentMethod, setPaymentMethod] = useState('card');
   const [isProcessing, setIsProcessing] = useState(false);
+  const [timeLeft, setTimeLeft] = useState('');
+
+  const isRetryExpired = bookingInfo?.paymentRetryUntil
+    ? new Date(bookingInfo.paymentRetryUntil) < new Date()
+    : false;
+
+  React.useEffect(() => {
+    const fetchBookingDetails = async () => {
+      if (!bookingInfo) {
+        try {
+          const response = await bookingAPI.getBookingDetails(bookingId);
+          if (response.data.success) {
+            setBookingInfo(response.data.booking);
+          }
+        } catch (error) {
+          toast.error('Failed to load booking details');
+          navigate('/my-bookings');
+        }
+      }
+    };
+
+    fetchBookingDetails();
+  }, [bookingId, bookingInfo, navigate]);
+
+  React.useEffect(() => {
+    if (!bookingInfo?.paymentRetryUntil || bookingInfo.status !== 'payment_pending') {
+      setTimeLeft('');
+      return;
+    }
+
+    const interval = setInterval(() => {
+      const now = new Date();
+      const expiry = new Date(bookingInfo.paymentRetryUntil);
+      const diff = expiry - now;
+
+      if (diff <= 0) {
+        setTimeLeft('Expired');
+        clearInterval(interval);
+        return;
+      }
+
+      const minutes = Math.floor(diff / 60000);
+      const seconds = Math.floor((diff % 60000) / 1000);
+      setTimeLeft(`${minutes}m ${seconds}s`);
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, [bookingInfo]);
 
   const handlePaymentSuccess = async () => {
+    if (isRetryExpired) {
+      toast.error('Retry window has expired. Please start a new booking.');
+      navigate('/my-bookings');
+      return;
+    }
+
     setIsProcessing(true);
 
     try {
@@ -37,6 +92,12 @@ const Payment = () => {
   };
 
   const handlePaymentFailure = async () => {
+    if (isRetryExpired) {
+      toast.error('Retry window has expired, payment cannot be retried.');
+      navigate('/my-bookings');
+      return;
+    }
+
     try {
       await bookingAPI.confirmBooking(bookingId, {
         paymentStatus: 'failed'
@@ -60,8 +121,8 @@ const Payment = () => {
     }
   };
 
-  if (!booking) {
-    return <div className="payment-container"><p>Booking not found</p></div>;
+  if (!bookingInfo) {
+    return <div className="payment-container"><p>Loading booking details...</p></div>;
   }
 
   return (
@@ -69,12 +130,25 @@ const Payment = () => {
       <div className="payment-card">
         <h2>Secure Payment</h2>
 
+        <p className="payment-status">
+          Status: <strong>{bookingInfo.status}</strong>
+          {bookingInfo.status === 'payment_pending' && timeLeft && (
+            <> • Retry window: {timeLeft}</>
+          )}
+        </p>
+
         <div className="booking-summary">
-          <p><strong>Booking ID:</strong> {booking.bookingId}</p>
-          <p><strong>Passenger:</strong> {booking.passengerName}</p>
-          <p><strong>Seats:</strong> {booking.seatsBooked.join(', ')}</p>
+          <p><strong>Booking ID:</strong> {bookingInfo.bookingId}</p>
+          <p><strong>Passenger:</strong> {bookingInfo.passengerName}</p>
+          <p><strong>Departure Seats:</strong> {bookingInfo.seatsBooked.join(', ')}</p>
+          {bookingInfo.returnSeatsBooked?.length > 0 && (
+            <p><strong>Return Seats:</strong> {bookingInfo.returnSeatsBooked.join(', ')}</p>
+          )}
+          {bookingInfo.returnBusId && (
+            <p><strong>Return Bus:</strong> {bookingInfo.returnBusId.operatorName || bookingInfo.returnBusId}</p>
+          )}
           <p className="total-amount">
-            <strong>Total Amount:</strong> {formatPrice(booking.totalPrice)}
+            <strong>Total Amount:</strong> {formatPrice(bookingInfo.totalPrice)}
           </p>
         </div>
 
@@ -118,15 +192,15 @@ const Payment = () => {
           <button
             className="pay-btn"
             onClick={handlePaymentSuccess}
-            disabled={isProcessing}
+            disabled={isProcessing || bookingInfo.status !== 'payment_pending' || isRetryExpired}
           >
-            {isProcessing ? 'Processing...' : `Pay ${formatPrice(booking.totalPrice)}`}
+            {isProcessing ? 'Processing...' : `Pay ${formatPrice(bookingInfo.totalPrice)}`}
           </button>
 
           <button
             className="fail-btn"
             onClick={handlePaymentFailure}
-            disabled={isProcessing}
+            disabled={isProcessing || bookingInfo.status !== 'payment_pending' || isRetryExpired}
           >
             Simulate Failure
           </button>
@@ -149,6 +223,12 @@ const Payment = () => {
             </button>
           )}
         </div>
+
+        {isRetryExpired && (
+          <p className="payment-error">
+            ⚠️ Payment retry window has expired. Please create a new booking.
+          </p>
+        )}
 
         <p className="payment-note">
           ℹ️ This is a demo payment. Click "Pay" to confirm your booking.

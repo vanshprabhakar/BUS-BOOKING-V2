@@ -1,6 +1,7 @@
 const Booking = require('../models/Booking');
 const Bus = require('../models/Bus');
 const Payment = require('../models/Payment');
+const { expireOldPendingBookings } = require('../utils/bookingUtils');
 
 /**
  * @desc    Create a new booking
@@ -12,6 +13,8 @@ exports.createBooking = async (req, res) => {
     const {
       busId,
       seatsBooked,
+      returnBusId,          
+      returnSeatsBooked,    
       passengerName,
       passengerEmail,
       passengerPhone,
@@ -42,11 +45,99 @@ exports.createBooking = async (req, res) => {
     }
 
     // Check if seats are available and not already booked
+    const scheduleDate = new Date(travelDate);
+    const returnScheduleDate = returnDate ? new Date(returnDate) : null;
+    await expireOldPendingBookings({ busId, travelDate: scheduleDate });
+    const BusSchedule = require('../models/BusSchedule');
+    const schedule = await BusSchedule.findOne({ busId, scheduleDate });
+
+    // existing booking symptom check (backup source of truth)
     const existingBookings = await Booking.find({
       busId,
-      travelDate: new Date(travelDate),
+      travelDate: scheduleDate,
       status: { $in: ['payment_pending', 'confirmed'] }
     });
+
+    if (schedule) {
+      const bookedSeats = schedule.seatLayout
+        .flat()
+        .filter(seat => seat.status === 'booked')
+        .map(seat => seat.seatNumber);
+
+      const scheduleConflicts = seatsBooked.filter((seat) => bookedSeats.includes(seat));
+      if (scheduleConflicts.length > 0) {
+        return res.status(409).json({
+          success: false,
+          message: `Seats ${scheduleConflicts.join(', ')} are already booked in this schedule`,
+          conflictingSeats: scheduleConflicts
+        });
+      }
+    }
+
+    let returnBus = null;
+    if (bookingType === 'roundtrip') {
+      if (!returnBusId || !Array.isArray(returnSeatsBooked) || returnSeatsBooked.length === 0 || !returnDate) {
+        return res.status(400).json({
+          success: false,
+          message: 'Round-trip bookings require a return bus, return seats, and return date'
+        });
+      }
+
+      if (!returnScheduleDate || returnScheduleDate < scheduleDate) {
+        return res.status(400).json({
+          success: false,
+          message: 'Return date must be the same or after the departure date'
+        });
+      }
+
+      returnBus = await Bus.findById(returnBusId);
+      if (!returnBus) {
+        return res.status(404).json({
+          success: false,
+          message: 'Return bus not found'
+        });
+      }
+
+      if (returnSeatsBooked.length !== seatsBooked.length) {
+        return res.status(400).json({
+          success: false,
+          message: 'Return seat count must match departure seat count for round-trip bookings'
+        });
+      }
+
+      await expireOldPendingBookings({ busId: returnBusId, travelDate: returnScheduleDate });
+      const returnBookings = await Booking.find({
+        status: { $in: ['payment_pending', 'confirmed'] },
+        $or: [
+          { busId: returnBusId, travelDate: returnScheduleDate },
+          { returnBusId: returnBusId, returnDate: returnScheduleDate }
+        ]
+      });
+
+      const returnBookedSeats = [];
+      returnBookings.forEach((booking) => {
+        if (booking.busId?.toString() === returnBusId.toString() && booking.travelDate?.toISOString() === returnScheduleDate.toISOString()) {
+          booking.seatsBooked.forEach((seatNumber) => {
+            if (!returnBookedSeats.includes(seatNumber)) returnBookedSeats.push(seatNumber);
+          });
+        }
+
+        if (booking.returnBusId?.toString() === returnBusId.toString() && booking.returnDate?.toISOString() === returnScheduleDate.toISOString()) {
+          booking.returnSeatsBooked?.forEach((seatNumber) => {
+            if (!returnBookedSeats.includes(seatNumber)) returnBookedSeats.push(seatNumber);
+          });
+        }
+      });
+
+      const returnConflicts = returnSeatsBooked.filter((seat) => returnBookedSeats.includes(seat));
+      if (returnConflicts.length > 0) {
+        return res.status(409).json({
+          success: false,
+          message: `Return seats ${returnConflicts.join(', ')} are already booked`,
+          conflictingSeats: returnConflicts
+        });
+      }
+    }
 
     const bookedSeats = [];
     const genderOnSeat = {};
@@ -81,23 +172,29 @@ exports.createBooking = async (req, res) => {
     }
 
     // Calculate total price
-    const totalPrice = bus.price * seatsBooked.length;
+    const departurePrice = bus.price * seatsBooked.length;
+    const returnPrice = returnBus ? returnBus.price * returnSeatsBooked.length : 0;
+    const totalPrice = departurePrice + returnPrice;
 
     // Generate unique booking ID
     const bookingId = `BK${Date.now()}-${req.user._id.toString().slice(-6)}`;
 
     // Create booking
+    const retryWindowMinutes = 10;
     const booking = new Booking({
       bookingId,
       userId: req.user._id,
       busId,
+      returnBusId: returnBus ? returnBus._id : null,
       passengerName,
       passengerEmail,
       passengerPhone,
       seatsBooked,
+      returnSeatsBooked: returnBus ? returnSeatsBooked : [],
       numberOfPassengers: seatsBooked.length,
       travelDate: new Date(travelDate),
       returnDate: returnDate ? new Date(returnDate) : null,
+      returnTotalPrice: returnPrice,
       pickupPoint,
       dropPoint,
       totalPrice,
@@ -112,7 +209,8 @@ exports.createBooking = async (req, res) => {
         }
       ],
       status: 'payment_pending',
-      paymentStatus: 'pending'
+      paymentStatus: 'pending',
+      paymentRetryUntil: new Date(Date.now() + retryWindowMinutes * 60 * 1000)
     });
 
     await booking.save();
@@ -167,6 +265,8 @@ exports.confirmBooking = async (req, res) => {
       });
     }
 
+    const now = new Date();
+
     if (paymentStatus === 'completed') {
       booking.status = 'confirmed';
       booking.paymentStatus = 'completed';
@@ -178,15 +278,60 @@ exports.confirmBooking = async (req, res) => {
         { paymentStatus: 'completed', transactionId, updatedAt: new Date() }
       );
 
-      // Update bus available seats
+      // Update schedule seat availability, not bus static assignment
+      const BusSchedule = require('../models/BusSchedule');
+      const scheduleDate = new Date(booking.travelDate);
+      let schedule = await BusSchedule.findOne({ busId: booking.busId, scheduleDate });
+
+      // if no schedule exists, initialize from bus template
+      if (!schedule) {
+        const bus = await Bus.findById(booking.busId);
+        if (bus) {
+          schedule = new BusSchedule({
+            busId: booking.busId,
+            scheduleDate,
+            seatLayout: bus.seatLayout.map(row => row.map((seat) => ({ ...seat, status: 'available', gender: null }))),
+            totalSeats: bus.totalSeats,
+            availableSeats: bus.totalSeats
+          });
+        }
+      }
+
+      if (schedule) {
+        // mark booked seats
+        schedule.seatLayout = schedule.seatLayout.map(row =>
+          row.map(seat => {
+            if (booking.seatsBooked.includes(seat.seatNumber)) {
+              return {
+                ...seat,
+                status: 'booked',
+                gender: booking.passengerDetails?.find(p => p.seatNumber === seat.seatNumber)?.gender || 'other'
+              };
+            }
+            return seat;
+          })
+        );
+
+        const bookedCount = schedule.seatLayout.flat().filter((s) => s.status === 'booked').length;
+        schedule.availableSeats = Math.max(0, schedule.totalSeats - bookedCount);
+        await schedule.save();
+      }
+
+      // Update bus available seats as general metrics (optional)
       const bus = await Bus.findById(booking.busId);
       if (bus) {
-        bus.availableSeats = bus.availableSeats - booking.seatsBooked.length;
+        bus.availableSeats = Math.max(0, bus.availableSeats - booking.seatsBooked.length);
         await bus.save();
       }
     } else {
-      booking.status = 'failed';
-      booking.paymentStatus = 'failed';
+      // If still within retry window, keep pending for retry, but mark payment attempt failed
+      if (booking.paymentRetryUntil && now <= booking.paymentRetryUntil) {
+        booking.status = 'payment_pending';
+        booking.paymentStatus = 'failed';
+      } else {
+        booking.status = 'failed';
+        booking.paymentStatus = 'failed';
+      }
 
       // Update payment status
       await Payment.findOneAndUpdate(
@@ -260,8 +405,31 @@ exports.getMyBookings = async (req, res) => {
     const totalBookings = await Booking.countDocuments({ userId: req.user._id });
     const totalPages = Math.ceil(totalBookings / limit);
 
-    const bookings = await Booking.find({ userId: req.user._id })
+    let bookings = await Booking.find({ userId: req.user._id })
       .populate('busId', 'operatorName source destination departureTime arrivalTime price')
+      .populate('returnBusId', 'operatorName source destination departureTime arrivalTime price')
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(parseInt(limit));
+
+    // Expire payment pending bookings if retry window passed
+    const now = new Date();
+    const bookingUpdates = bookings.map(async (booking) => {
+      if (
+        booking.status === 'payment_pending' &&
+        booking.paymentRetryUntil &&
+        new Date(booking.paymentRetryUntil) < now
+      ) {
+        booking.status = 'failed';
+        booking.paymentStatus = 'failed';
+        await booking.save();
+      }
+    });
+    await Promise.all(bookingUpdates);
+
+    bookings = await Booking.find({ userId: req.user._id })
+      .populate('busId', 'operatorName source destination departureTime arrivalTime price')
+      .populate('returnBusId', 'operatorName source destination departureTime arrivalTime price')
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(parseInt(limit));
@@ -291,7 +459,26 @@ exports.getBookingDetails = async (req, res) => {
     const booking = await Booking.findById(req.params.id)
       .populate('userId', 'name email phone')
       .populate('busId', 'operatorName source destination departureTime arrivalTime price busType')
+      .populate('returnBusId', 'operatorName source destination departureTime arrivalTime price busType')
       .lean();
+
+    if (!booking) {
+      return res.status(404).json({ success: false, message: 'Booking not found' });
+    }
+
+    // Expire payment retry window automatically
+    if (
+      booking.status === 'payment_pending' &&
+      booking.paymentRetryUntil &&
+      new Date(booking.paymentRetryUntil) < new Date()
+    ) {
+      await Booking.findByIdAndUpdate(booking._id, {
+        status: 'failed',
+        paymentStatus: 'failed'
+      });
+      booking.status = 'failed';
+      booking.paymentStatus = 'failed';
+    }
 
     if (!booking) {
       return res.status(404).json({

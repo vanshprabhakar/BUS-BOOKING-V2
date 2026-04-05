@@ -2,25 +2,61 @@
   background: white;
   padding: 30px;
   border-radius: 10px;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+  box-shadow: none;
 }
 
 .seat-layout {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 15px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
   margin-bottom: 30px;
   padding: 20px;
   background: #f9f9f9;
   border-radius: 10px;
+  max-height: 420px;
+  overflow-y: auto;
+}
+
+.seat-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.row-label {
+  width: 65px;
+  text-align: left;
+  font-size: 12px;
+  font-weight: 600;
+  color: #555;
+}
+
+.seat-block {
+  display: flex;
+  gap: 8px;
+}
+
+.aisle {
+  width: 22px;
+  height: 40px;
+  background: transparent;
 }
 
 .seat-row {
   display: flex;
   gap: 8px;
   justify-content: center;
+  align-items: center;
 }
 
+.row-label {
+  width: 65px;
+  text-align: center;
+  font-size: 12px;
+  font-weight: 600;
+  color: #555;
+  margin-right: 10px;
+}
 .seat {
   width: 40px;
   height: 40px;
@@ -54,6 +90,14 @@
   border-color: #ccc;
   cursor: not-allowed;
   opacity: 0.6;
+}
+
+.seat.blocked {
+  background: #ffe9d6;
+  color: #8a531a;
+  border-color: #ffb703;
+  cursor: not-allowed;
+  opacity: 0.85;
 }
 
 .seat.booked-female {
@@ -112,6 +156,11 @@
 .legend-seat.booked {
   background: #f0f0f0;
   border-color: #ccc;
+}
+
+.legend-seat.blocked {
+  background: #ffe9d6;
+  border-color: #ffb703;
 }
 
 .legend-seat.selected {

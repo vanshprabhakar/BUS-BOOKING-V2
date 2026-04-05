@@ -46,4 +46,6 @@ router.get('/:id', busController.getBusById);
  */
 router.get('/:id/seats/:date', busController.getBusSeats);
 
+router.post('/:id/schedule', authenticateToken, busController.createBusSchedule);
+
 module.exports = router;

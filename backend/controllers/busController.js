@@ -1,4 +1,6 @@
 const Bus = require('../models/Bus');
+const Booking = require('../models/Booking');
+const { expireOldPendingBookings } = require('../utils/bookingUtils');
 
 /**
  * @desc    Get all buses with filters
@@ -99,6 +101,7 @@ exports.getBusById = async (req, res) => {
 exports.getBusSeats = async (req, res) => {
   try {
     const { id, date } = req.params;
+    const scheduleDate = new Date(date);
 
     const bus = await Bus.findById(id);
     if (!bus) {
@@ -108,56 +111,77 @@ exports.getBusSeats = async (req, res) => {
       });
     }
 
-    // Find bookings for this bus on the given date
+    const BusSchedule = require('../models/BusSchedule');
+    await expireOldPendingBookings({ busId: id, travelDate: scheduleDate });
+    let schedule = await BusSchedule.findOne({ busId: id, scheduleDate });
+
+    if (!schedule) {
+      const baseLayout = bus.seatLayout.map(row =>
+        row.map(seat => ({
+          ...seat,
+          status: 'available',
+          gender: null
+        }))
+      );
+
+      schedule = new BusSchedule({
+        busId: id,
+        scheduleDate,
+        seatLayout: baseLayout,
+        totalSeats: bus.totalSeats,
+        availableSeats: bus.totalSeats
+      });
+
+      await schedule.save();
+    }
+
     const Booking = require('../models/Booking');
     const bookings = await Booking.find({
       busId: id,
-      travelDate: new Date(date),
-      status: { $in: ['confirmed', 'pending'] }
+      travelDate: scheduleDate,
+      status: { $in: ['confirmed', 'payment_pending'] }
     });
 
-    // Get booked seats with gender tags
     const bookedSeatMeta = {};
+    const blockedSeats = [];
     const bookedSeats = [];
     bookings.forEach(booking => {
       booking.seatsBooked.forEach((seatNumber, index) => {
         const passenger = booking.passengerDetails?.[index] || {};
-        bookedSeatMeta[seatNumber] = {
-          gender: passenger.gender || 'other',
-          bookingId: booking._id
-        };
-        if (!bookedSeats.includes(seatNumber)) {
-          bookedSeats.push(seatNumber);
+        if (booking.status === 'confirmed') {
+          bookedSeatMeta[seatNumber] = { gender: passenger.gender || 'other' };
+          if (!bookedSeats.includes(seatNumber)) bookedSeats.push(seatNumber);
+        } else if (booking.status === 'payment_pending') {
+          if (!blockedSeats.includes(seatNumber)) blockedSeats.push(seatNumber);
         }
       });
     });
 
-    // Update seat layout
-    const seatLayout = bus.seatLayout.map(row =>
+    const seatLayout = schedule.seatLayout.map(row =>
       row.map(seat => {
         if (bookedSeatMeta[seat.seatNumber]) {
-          return {
-            ...seat,
-            status: 'booked',
-            gender: bookedSeatMeta[seat.seatNumber].gender
-          };
+          return { ...seat, status: 'booked', gender: bookedSeatMeta[seat.seatNumber].gender };
         }
-
-        return {
-          ...seat,
-          status: 'available',
-          gender: null
-        };
+        if (blockedSeats.includes(seat.seatNumber)) {
+          return { ...seat, status: 'blocked', gender: null };
+        }
+        return { ...seat, status: 'available', gender: null };
       })
     );
+
+    const available = seatLayout.flat().filter((s) => s.status === 'available').length;
+    schedule.seatLayout = seatLayout;
+    schedule.availableSeats = available;
+    await schedule.save();
 
     res.status(200).json({
       success: true,
       busId: bus._id,
+      scheduleDate,
       totalSeats: bus.totalSeats,
       seatLayout,
       bookedSeats,
-      availableSeatsCount: bus.totalSeats - bookedSeats.length
+      availableSeatsCount: available
     });
   } catch (error) {
     res.status(500).json({
@@ -250,6 +274,59 @@ exports.getSuggestions = async (req, res) => {
     const combined = [...new Set([...sources, ...destinations])];
 
     res.status(200).json({ success: true, suggestions: combined.slice(0, 10) });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+/**
+ * @desc    Add or refresh schedule for a bus on a specific date
+ * @route   POST /api/buses/:id/schedule
+ * @access  Private/Admin
+ */
+exports.createBusSchedule = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { scheduleDate } = req.body;
+
+    if (!scheduleDate) {
+      return res.status(400).json({ success: false, message: 'scheduleDate is required' });
+    }
+
+    const bus = await Bus.findById(id);
+    if (!bus) {
+      return res.status(404).json({ success: false, message: 'Bus not found' });
+    }
+
+    const BusSchedule = require('../models/BusSchedule');
+    const date = new Date(scheduleDate);
+
+    let schedule = await BusSchedule.findOne({ busId: id, scheduleDate: date });
+    const baseLayout = bus.seatLayout.map(row =>
+      row.map(x => ({ ...x, status: 'available', gender: null }))
+    );
+
+    if (schedule) {
+      schedule.seatLayout = baseLayout;
+      schedule.totalSeats = bus.totalSeats;
+      schedule.availableSeats = bus.totalSeats;
+    } else {
+      schedule = new BusSchedule({
+        busId: id,
+        scheduleDate: date,
+        seatLayout: baseLayout,
+        totalSeats: bus.totalSeats,
+        availableSeats: bus.totalSeats
+      });
+    }
+
+    await schedule.save();
+
+    res.status(201).json({
+      success: true,
+      message: 'Schedule created/updated successfully',
+      schedule
+    });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }
